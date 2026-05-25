@@ -60,23 +60,23 @@ Recogemos, lavamos y entregamos tu ropa en 24-48 horas en Miraflores.
 3️⃣ Tengo una pregunta
 
 ━━━ SERVICIOS Y PRECIOS ━━━
-- Lavado al peso:        S/ 9 por kg
-- Lavado + planchado:    S/ 12 por kg
-- Dry clean camisa:      S/ 11 por prenda
-- Dry clean pantalón:    S/ 12 por prenda
-- Dry clean terno:       S/ 25 por unidad
-- Ropa de cama:          S/ 22.50 por pieza (mínimo 2 piezas = S/ 45)
-- Zapatillas:            S/ 30 por par
-- Express (cualquier servicio): +S/ 8 adicional → entrega en 24h garantizada
-- Entrega normal: 24 a 48 horas
+• Lavado al peso:        S/ 9 por kg
+• Lavado + planchado:    S/ 12 por kg
+• Dry clean camisa:      S/ 11 por prenda
+• Dry clean pantalón:    S/ 12 por prenda
+• Dry clean terno:       S/ 25 por unidad
+• Ropa de cama:          S/ 22.50 por pieza (mínimo 2 piezas = S/ 45)
+• Zapatillas:            S/ 30 por par
+• Express (cualquier servicio): +S/ 8 adicional → entrega en 24h garantizada
+• Entrega normal: 24 a 48 horas
 
 ━━━ INFORMACIÓN CLAVE ━━━
-- Zona de cobertura: Miraflores. Próximamente San Isidro y Barranco.
-- Pago: Yape, Plin, efectivo al entregar, o transferencia bancaria.
-- Sin cargos ocultos. El precio que se dice es el que se cobra.
-- El cliente habla con una persona real, no con una app impersonal.
-- El papá del dueño hace el delivery con su camioneta.
-- Si el cliente tiene dudas sobre si una prenda necesita dry clean,
+• Zona de cobertura: Miraflores. Próximamente San Isidro y Barranco.
+• Pago: Yape, Plin, efectivo al entregar, o transferencia bancaria.
+• Sin cargos ocultos. El precio que se dice es el que se cobra.
+• El cliente habla con una persona real, no con una app impersonal.
+• El papá del dueño hace el delivery con su camioneta.
+• Si el cliente tiene dudas sobre si una prenda necesita dry clean,
   recomendalo para prendas delicadas, trajes, lana, seda, o con etiqueta
   "dry clean only".
 
@@ -153,10 +153,10 @@ PEDIDO_LISTO:{"servicio":"...","cantidad":"...","express":true/false,"nombre":".
 Si el cliente cancela, no generes el bloque PEDIDO_LISTO.
 
 ━━━ LÍMITES ━━━
-- Solo hablás de LavaYa y sus servicios. Si te preguntan otra cosa,
+• Solo hablás de LavaYa y sus servicios. Si te preguntan otra cosa,
   decís amablemente que solo podés ayudar con la lavandería.
-- Si el cliente se pone grosero, respondés con calma y profesionalismo.
-- No inventés precios ni servicios que no están en la lista de arriba.
+• Si el cliente se pone grosero, respondés con calma y profesionalismo.
+• No inventés precios ni servicios que no están en la lista de arriba.
 """
 
 
@@ -183,6 +183,10 @@ def save_order(phone: str, data: dict) -> int:
 
 
 def extract_order(text: str) -> tuple[dict | None, str]:
+    """
+    Busca el bloque PEDIDO_LISTO:{...} en el texto de Claude.
+    Retorna (pedido_dict, texto_limpio_para_cliente).
+    """
     pattern = r"PEDIDO_LISTO:\{.*?\}"
     match   = re.search(pattern, text, re.DOTALL)
 
@@ -195,6 +199,7 @@ def extract_order(text: str) -> tuple[dict | None, str]:
     except json.JSONDecodeError:
         return None, text
 
+    # Limpiar el bloque del mensaje que verá el cliente
     clean_text = text[:match.start()].strip() + "\n" + text[match.end():].strip()
     clean_text = clean_text.strip()
 
@@ -203,16 +208,20 @@ def extract_order(text: str) -> tuple[dict | None, str]:
 
 # ── Lógica principal ──────────────────────────────────────────────────────────
 def handle_message(phone: str, message: str) -> str:
+    # Inicializar historial si es nuevo número
     if phone not in conversations:
         conversations[phone] = []
 
+    # Agregar mensaje del cliente al historial
     conversations[phone].append({
         "role":    "user",
         "content": message,
     })
 
+    # Mantener solo los últimos 30 mensajes (memoria de conversación)
     recent_messages = conversations[phone][-30:]
 
+    # Llamar a Claude Haiku
     try:
         response = client.messages.create(
             model      = "claude-haiku-4-5-20251001",
@@ -229,14 +238,17 @@ def handle_message(phone: str, message: str) -> str:
         )
         print(f"[ERROR Anthropic API] {e}")
 
+    # Detectar si Claude generó un pedido confirmado
     pedido, reply_clean = extract_order(reply)
 
     if pedido:
         order_id = save_order(phone, pedido)
+        # Reemplazar cualquier mención de número de pedido genérico con el real
         reply_clean = reply_clean.replace("#{id}", f"#{order_id}")
         if f"#{order_id}" not in reply_clean:
             reply_clean += f"\n\n📋 Tu número de pedido es *#{order_id}*"
 
+    # Guardar respuesta del bot en el historial
     conversations[phone].append({
         "role":    "assistant",
         "content": reply_clean,
@@ -274,6 +286,7 @@ VERIFY_TOKEN = "lavaya2024"
 
 @app.route("/webhook", methods=["GET"])
 def webhook_verify():
+    """Meta verifica el webhook con un GET al configurar."""
     mode      = request.args.get("hub.mode")
     token     = request.args.get("hub.verify_token")
     challenge = request.args.get("hub.challenge")
@@ -288,22 +301,25 @@ def webhook_verify():
 
 @app.route("/webhook", methods=["POST"])
 def webhook():
+    """Recibe mensajes entrantes de Meta."""
     data = request.get_json(silent=True) or {}
 
     try:
         entry   = data["entry"][0]
         changes = entry["changes"][0]["value"]
 
+        # Ignorar notificaciones que no son mensajes (ej: status updates)
         if "messages" not in changes:
             return "OK", 200
 
         msg         = changes["messages"][0]
-        from_number = msg["from"]
+        from_number = msg["from"]          # número del cliente (ej: 51987654321)
         msg_type    = msg.get("type", "")
 
         if msg_type == "text":
             incoming_msg = msg["text"]["body"].strip()
         else:
+            # Mensaje de voz, imagen, etc. — pedir que escriba
             incoming_msg = "[sticker/imagen/audio]"
 
         if not incoming_msg:
@@ -318,7 +334,7 @@ def webhook():
     return "OK", 200
 
 
-# ── Panel de pedidos ──────────────────────────────────────────────────────────
+# ── Panel de pedidos (abrís en el navegador para ver todos los pedidos) ───────
 @app.route("/pedidos")
 def ver_pedidos():
     if not os.path.exists(ORDERS_FILE):
@@ -379,4 +395,34 @@ def ver_pedidos():
            letter-spacing: .5px; }}
   td    {{ padding: 10px 13px; border-bottom: 1px solid #eee; font-size: 13px; }}
   tr:last-child td {{ border-bottom: none; }}
-  small {{ color: #999; font-size: 11px; display:block; margin-top:
+  small {{ color: #999; font-size: 11px; display:block; margin-top:12px; }}
+</style>
+</head><body>
+<h1>🧺 LavaYa Miraflores</h1>
+<div class="stats">
+  <div class="stat"><strong>{len(orders)}</strong>Pedidos totales</div>
+  <div class="stat"><strong style="color:#FF9800">{pendientes}</strong>Pendientes</div>
+  <div class="stat"><strong>{len(orders)-pendientes}</strong>Completados</div>
+</div>
+<table>
+  <tr>
+    <th>#</th><th>Fecha</th><th>Nombre</th><th>Teléfono</th>
+    <th>Servicio</th><th>Cantidad</th><th>Dirección</th>
+    <th>Horario</th><th>Express</th><th>Estado</th>
+  </tr>
+  {rows}
+</table>
+<small>🔄 Página se actualiza cada 30 segundos</small>
+</body></html>"""
+
+
+# ── Health check ──────────────────────────────────────────────────────────────
+@app.route("/")
+def health():
+    return "LavaYa Bot con IA ✅ — Claude Haiku activo"
+
+
+# ── Entry point ───────────────────────────────────────────────────────────────
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port, debug=False)
