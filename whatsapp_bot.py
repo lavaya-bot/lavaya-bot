@@ -360,9 +360,10 @@ def ver_pedidos():
             "cancelado": "#F44336",
         }.get(estado, "#999")
 
+        order_id = o.get('id', '')
         rows += f"""
         <tr>
-          <td>#{o.get('id','')}</td>
+          <td>#{order_id}</td>
           <td>{o.get('fecha','')}</td>
           <td><strong>{o.get('nombre','')}</strong></td>
           <td>{o.get('telefono','')}</td>
@@ -376,6 +377,16 @@ def ver_pedidos():
                          border-radius:12px;font-size:12px;font-weight:bold">
               {estado.upper()}
             </span>
+          </td>
+          <td>
+            <select onchange="cambiarEstado({order_id}, this.value)"
+                    style="font-size:12px;padding:4px 6px;border-radius:6px;border:1px solid #ccc;cursor:pointer">
+              <option value="">Cambiar...</option>
+              <option value="pendiente">⏳ Pendiente</option>
+              <option value="en camino">🚚 En camino</option>
+              <option value="entregado">✅ Entregado</option>
+              <option value="cancelado">❌ Cancelado</option>
+            </select>
           </td>
         </tr>"""
 
@@ -403,6 +414,19 @@ def ver_pedidos():
   tr:last-child td {{ border-bottom: none; }}
   small {{ color: #999; font-size: 11px; display:block; margin-top:12px; }}
 </style>
+<script>
+function cambiarEstado(id, estado) {{
+  if (!estado) return;
+  fetch('/actualizar_estado', {{
+    method: 'POST',
+    headers: {{'Content-Type': 'application/json'}},
+    body: JSON.stringify({{id: id, estado: estado}})
+  }}).then(r => r.json()).then(d => {{
+    if (d.ok) location.reload();
+    else alert('Error al actualizar');
+  }});
+}}
+</script>
 </head><body>
 <h1>🧺 LavaYa Miraflores</h1>
 <div class="stats">
@@ -414,12 +438,44 @@ def ver_pedidos():
   <tr>
     <th>#</th><th>Fecha</th><th>Nombre</th><th>Teléfono</th>
     <th>Servicio</th><th>Cantidad</th><th>Dirección</th>
-    <th>Horario</th><th>Express</th><th>Estado</th>
+    <th>Horario</th><th>Express</th><th>Estado</th><th>Acción</th>
   </tr>
   {rows}
 </table>
 <small>🔄 Página se actualiza cada 30 segundos</small>
 </body></html>"""
+
+
+# ── Actualizar estado de pedido ───────────────────────────────────────────────
+@app.route("/actualizar_estado", methods=["POST"])
+def actualizar_estado():
+    data   = request.get_json(silent=True) or {}
+    oid    = data.get("id")
+    estado = data.get("estado", "").strip()
+
+    if not oid or not estado:
+        return jsonify({"ok": False, "error": "Datos incompletos"}), 400
+
+    if not os.path.exists(ORDERS_FILE):
+        return jsonify({"ok": False, "error": "Sin pedidos"}), 404
+
+    with open(ORDERS_FILE, "r", encoding="utf-8") as f:
+        orders = json.load(f)
+
+    updated = False
+    for o in orders:
+        if o.get("id") == oid:
+            o["estado"] = estado
+            updated = True
+            break
+
+    if not updated:
+        return jsonify({"ok": False, "error": "Pedido no encontrado"}), 404
+
+    with open(ORDERS_FILE, "w", encoding="utf-8") as f:
+        json.dump(orders, f, ensure_ascii=False, indent=2)
+
+    return jsonify({"ok": True})
 
 
 # ── Health check ──────────────────────────────────────────────────────────────
