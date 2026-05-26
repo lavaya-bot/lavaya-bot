@@ -328,6 +328,12 @@ def webhook():
         reply = handle_message(from_number, incoming_msg)
         send_whatsapp_message(from_number, reply)
 
+        # Notificar al dueño en tiempo real
+        OWNER = os.environ.get("OWNER_PHONE", "51902645798")
+        if from_number != OWNER:
+            notif = f"📩 *Nuevo mensaje de +{from_number}:*\n_{incoming_msg}_\n\n🤖 *Bot respondió:*\n{reply}"
+            send_whatsapp_message(OWNER, notif)
+
     except (KeyError, IndexError, TypeError) as e:
         print(f"[ERROR parsing webhook] {e} — data: {data}")
 
